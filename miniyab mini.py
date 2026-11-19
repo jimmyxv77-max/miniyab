@@ -1570,7 +1570,7 @@ def run_v1_app():
       w_in,
       h_in,
       show_outliers=False,
-      show_median_val=True,
+      show_median_val=False,
       show_mean_val=False,
       decimals=4,
   ):
@@ -1604,82 +1604,71 @@ def run_v1_app():
     ax.axhline(p_lsl, color="#DC2626", ls="--", lw=1.2)
 
     width_scale = min(w_in / 11.0, 1.15)
-    label_font_size = (
-        (8.2 if n_boxes <= 12 else (7.0 if n_boxes <= 22 else 6.0))
-        * width_scale
-    )
-    x_offset = box_width * 0.54
-    fmt_str = f"{{:.{decimals}f}}"
-
-    if show_mean_val:
-      means_arr = [float(np.mean(arr)) for arr in box_data]
-      ax.scatter(
-          np.arange(1, n_boxes + 1),
-          means_arr,
-          color="#1D4ED8",
-          edgecolor="white",
-          s=22,
-          zorder=5,
-      )
-
-    y_min_cur, y_max_cur = ax.get_ylim()
-    y_span_cur = max(y_max_cur - y_min_cur, 1e-6)
-
-    for idx, arr in enumerate(box_data):
-      x_pos = (idx + 1) + x_offset
-      med_v = float(np.median(arr))
-      mean_v = float(np.mean(arr))
-
-      if show_median_val and show_mean_val:
-        min_gap = y_span_cur * 0.032
-        y_med_txt, y_mean_txt = med_v, mean_v
-        if abs(y_mean_txt - y_med_txt) < min_gap:
-          if y_mean_txt >= y_med_txt:
-            y_mean_txt = med_v + min_gap * 0.6
-            y_med_txt = med_v - min_gap * 0.6
-          else:
-            y_mean_txt = med_v - min_gap * 0.6
-            y_med_txt = med_v + min_gap * 0.6
-        ax.text(
-            x_pos,
-            y_med_txt,
-            f"Med:{fmt_str.format(med_v)}",
-            va="center",
-            ha="left",
-            fontsize=label_font_size,
-            color="#1F2937",
-        )
-        ax.text(
-            x_pos,
-            y_mean_txt,
-            f"Avg:{fmt_str.format(mean_v)}",
-            va="center",
-            ha="left",
-            fontsize=label_font_size,
-            color="#1D4ED8",
-        )
-      elif show_median_val:
-        ax.text(
-            x_pos,
-            med_v,
-            fmt_str.format(med_v),
-            va="center",
-            ha="left",
-            fontsize=label_font_size,
-            color="#1F2937",
-        )
-      elif show_mean_val:
-        ax.text(
-            x_pos,
-            mean_v,
-            fmt_str.format(mean_v),
-            va="center",
-            ha="left",
-            fontsize=label_font_size,
-            color="#1D4ED8",
-        )
-
     if show_median_val or show_mean_val:
+      label_font_size = (
+          (8.2 if n_boxes <= 12 else (7.0 if n_boxes <= 22 else 6.0))
+          * width_scale
+      )
+      x_offset = box_width * 0.54
+      fmt_str = f"{{:.{decimals}f}}"
+
+      y_min_cur, y_max_cur = ax.get_ylim()
+      y_span_cur = max(y_max_cur - y_min_cur, 1e-6)
+
+      for idx, arr in enumerate(box_data):
+        x_pos = (idx + 1) + x_offset
+        med_v = float(np.median(arr)) if show_median_val else None
+        mean_v = float(np.mean(arr)) if show_mean_val else None
+
+        if show_median_val and show_mean_val:
+          min_gap = y_span_cur * 0.032
+          y_med_txt, y_mean_txt = med_v, mean_v
+          if abs(y_mean_txt - y_med_txt) < min_gap:
+            if y_mean_txt >= y_med_txt:
+              y_mean_txt = med_v + min_gap * 0.6
+              y_med_txt = med_v - min_gap * 0.6
+            else:
+              y_mean_txt = med_v - min_gap * 0.6
+              y_med_txt = med_v + min_gap * 0.6
+          ax.text(
+              x_pos,
+              y_med_txt,
+              f"Med:{fmt_str.format(med_v)}",
+              va="center",
+              ha="left",
+              fontsize=label_font_size,
+              color="#1F2937",
+          )
+          ax.text(
+              x_pos,
+              y_mean_txt,
+              f"Avg:{fmt_str.format(mean_v)}",
+              va="center",
+              ha="left",
+              fontsize=label_font_size,
+              color="#1D4ED8",
+          )
+        elif show_median_val:
+          ax.text(
+              x_pos,
+              med_v,
+              fmt_str.format(med_v),
+              va="center",
+              ha="left",
+              fontsize=label_font_size,
+              color="#1F2937",
+          )
+        elif show_mean_val:
+          ax.text(
+              x_pos,
+              mean_v,
+              fmt_str.format(mean_v),
+              va="center",
+              ha="left",
+              fontsize=label_font_size,
+              color="#1D4ED8",
+          )
+
       ax.set_xlim(0.4, n_boxes + 1.05)
 
     ax_r = ax.twinx()
@@ -2103,7 +2092,7 @@ def run_v1_app():
         bc1, bc2, bc3, bc4, bc5 = st.columns([1.2, 1.2, 1.3, 0.9, 1.6])
         show_box_median = bc1.checkbox(
             "显示中位数 (Median)",
-            value=True,
+            value=False,
             key=f"v1_bmed_{dataset_key}_{p_name}",
         )
         show_box_mean = bc2.checkbox(
