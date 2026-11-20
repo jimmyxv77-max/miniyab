@@ -249,7 +249,7 @@ def detect_spec_from_columns(df, all_cols):
   usl_keywords = ["规格上限", "上限", "上公差", "usl", "upper"]
 
   for col in all_cols:
-    if col == "Row_Index":
+    if col in ("Row_Index", "Source_Batch"):
       continue
     col_clean = str(col).strip().lower()
     if lsl_col is None and any(k in col_clean for k in lsl_keywords):
@@ -445,14 +445,14 @@ def render_landing_page():
                         padding:22px 24px;background:rgba(148,163,184,0.05);min-height:230px;">
               <div style="display:inline-block;background:#475569;color:#FFFFFF;
                           font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;">
-                v1.0 · 单批次标准版（稳定保留）
+                v1.0 · 单批 / 多批叠加分析版
               </div>
-              <h3 style="margin:12px 0 8px 0;">📈 单批次全套 SPC 深度分析</h3>
+              <h3 style="margin:12px 0 8px 0;">📈 全套 SPC 深度分析（支持多文件堆叠）</h3>
               <p style="font-size:14px;line-height:1.65;opacity:0.9;">
-                适用于单个生产批次文件的详细制程能力评估与全套图表输出：
+                适用于单批次深度评估，也支持<strong>多同表头批次文件往下堆叠合并</strong>以扩充样本量：
               </p>
               <ul style="font-size:13.5px;line-height:1.75;padding-left:18px;margin-bottom:0;">
-                <li>单文件多项目分组、自定义比例（4:3 / 16:9 / 2.2:1 等）</li>
+                <li>支持单文件或<strong>多同表头文件纵向堆叠</strong>，自定义比例（4:3 / 16:9 / 2.2:1 等）</li>
                 <li>过程能力报告（CPK/PPK）、分组箱线图、时间序列图、散点序列图、单行均值趋势图</li>
                 <li>支持单点极端尖峰屏蔽与西格玛 / CPK 波动校准</li>
               </ul>
@@ -462,7 +462,7 @@ def render_landing_page():
     )
     st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
     if st.button(
-        "进入 1.0 单批次分析",
+        "进入 1.0 分析工作台",
         key="enter_v1_btn",
         use_container_width=True,
     ):
@@ -506,7 +506,7 @@ def render_sidebar_mode_switcher(current_mode):
   with st.sidebar:
     badge_bg = "#475569" if current_mode == "v1" else "#2563EB"
     badge_txt = (
-        "当前模式：v1.0 单批次标准版"
+        "当前模式：v1.0 单批 / 多批叠加版"
         if current_mode == "v1"
         else "当前模式：v2.0 多批次对比版"
     )
@@ -533,57 +533,120 @@ def render_sidebar_mode_switcher(current_mode):
 
 
 # ==============================================================================
-#                               版本 1.0：单批次标准分析
+#                   版本 1.0：单批 / 多同表头批次纵向堆叠分析
 # ==============================================================================
 def run_v1_app():
   render_sidebar_mode_switcher("v1")
 
-  def render_v1_header():
+  def render_v1_header(stacked_info_text=None):
     st.markdown(
         "<span style='background:#475569;color:#fff;font-size:11px;font-weight:700;"
-        "padding:2px 9px;border-radius:999px;'>v1.0 · 单批次标准分析</span>",
+        "padding:2px 9px;border-radius:999px;'>v1.0 · 单批 / 多批叠加合并分析</span>",
         unsafe_allow_html=True,
     )
     st.title("在线检测 SPC 与过程能力分析系统")
     st.caption("Created by xu")
+    if stacked_info_text:
+      st.markdown(
+          f"<div style='border-left:4px solid #475569;background:rgba(71,85,105,0.07);"
+          f"padding:8px 13px;border-radius:0 8px 8px 0;margin:6px 0 12px 0;font-size:13px;'>"
+          f"<strong>多批次堆叠合并状态：</strong>{stacked_info_text}</div>",
+          unsafe_allow_html=True,
+      )
 
   st.sidebar.header("1️⃣ 数据源与多项目分组")
-  uploaded_file = st.sidebar.file_uploader(
-      "上传检测数据表 (.xlsx / .csv)",
+  uploaded_files = st.sidebar.file_uploader(
+      "上传检测数据表（支持单文件或多同表头批次堆叠）",
       type=["xlsx", "xls", "csv"],
+      accept_multiple_files=True,
       key="v1_uploader",
   )
 
-  if uploaded_file is None:
+  if not uploaded_files:
     render_v1_header()
     st.info(
-        "👈 请在左侧边栏上传在线检测数据表格（第一行为表头，往下堆叠时间/检测数据）。"
+        "👈 请在左侧边栏上传检测数据表格（单文件或表头相同的多个批次文件；上传多个文件时将自动往下堆叠合并分析）。"
     )
     st.stop()
 
-  try:
-    sheets_dict = load_workbook_sheets(
-        uploaded_file.getvalue(), uploaded_file.name
-    )
-  except Exception as exc:
-    st.error(f"❌ 文件读取失败，请检查文件格式或编码：{exc}")
-    st.stop()
+  file_sheets_list = []
+  for f_idx, up_f in enumerate(uploaded_files):
+    try:
+      s_dict = load_workbook_sheets(up_f.getvalue(), up_f.name)
+    except Exception as exc:
+      st.error(f"❌ 文件 [{up_f.name}] 读取失败，请检查文件格式或编码：{exc}")
+      st.stop()
+    file_sheets_list.append({
+        "idx": f_idx,
+        "name": up_f.name,
+        "sheets": s_dict,
+    })
+
+  # 优先取所有上传文件的公共工作表；若不完全一致，取第一个文件的 Sheet 列表作为下拉选项
+  common_sheet_names = [
+      sh
+      for sh in file_sheets_list[0]["sheets"].keys()
+      if all(sh in item["sheets"] for item in file_sheets_list[1:])
+  ]
+  sheet_options = (
+      common_sheet_names
+      if common_sheet_names
+      else list(file_sheets_list[0]["sheets"].keys())
+  )
 
   selected_sheet = st.sidebar.selectbox(
-      "工作表 (Sheet)", list(sheets_dict.keys()), key="v1_sheet_sel"
+      "工作表 (Sheet)", sheet_options, key="v1_sheet_sel"
   )
-  df_raw = sheets_dict[selected_sheet].copy()
+
+  stacked_parts = []
+  used_sources = []
+  for item in file_sheets_list:
+    s_map = item["sheets"]
+    if selected_sheet in s_map:
+      part_df = s_map[selected_sheet].copy()
+      actual_sh = selected_sheet
+    else:
+      fallback_sh = list(s_map.keys())[0]
+      part_df = s_map[fallback_sh].copy()
+      actual_sh = fallback_sh
+
+    part_df = part_df.dropna(how="all")
+    if part_df.empty:
+      continue
+
+    src_label = (
+        item["name"]
+        if len(s_map) == 1
+        else f"{item['name']} [{actual_sh}]"
+    )
+    part_df["Source_Batch"] = src_label
+    stacked_parts.append(part_df)
+    used_sources.append(f"{src_label} ({len(part_df)}行)")
+
+  if not stacked_parts:
+    st.error("所选工作表无有效数据，请检查表格内容。")
+    st.stop()
+
+  # 多文件按顺序往下堆叠（保留所有列，同表头自动纵向对齐）
+  df_raw = pd.concat(stacked_parts, ignore_index=True)
   df_raw = df_raw.dropna(how="all").reset_index(drop=True)
 
   if df_raw.empty:
-    st.error("所选工作表无有效数据，请检查表格内容。")
+    st.error("堆叠合并后无有效数据，请检查表格内容。")
     st.stop()
 
   df_raw.insert(0, "Row_Index", np.arange(1, len(df_raw) + 1))
 
+  stacked_banner = None
+  if len(stacked_parts) > 1:
+    stacked_banner = (
+        f"已将 <strong>{len(stacked_parts)} 个批次/文件</strong> 往下堆叠合并，"
+        f"合计 <strong>{len(df_raw)} 行</strong>（{' → '.join(used_sources)}）。"
+    )
+
   numeric_cols_all = []
   for col in df_raw.columns:
-    if col == "Row_Index":
+    if col in ("Row_Index", "Source_Batch"):
       continue
     converted = pd.to_numeric(df_raw[col], errors="coerce")
     non_null = df_raw[col].notna().sum()
@@ -607,7 +670,9 @@ def run_v1_app():
       g for g in group_order if not is_likely_non_measurement(g)
   ]
 
-  dataset_key = f"{uploaded_file.name}::{selected_sheet}"
+  files_sig = "||".join(f"{it['name']}:{len(it['sheets'])}" for it in file_sheets_list)
+  dataset_key = f"{files_sig}::{selected_sheet}::{len(df_raw)}"
+
   if st.session_state.get("v1_active_dataset_key") != dataset_key:
     st.session_state["v1_active_dataset_key"] = dataset_key
     st.session_state["v1_project_groups_map"] = {
@@ -774,7 +839,7 @@ def run_v1_app():
     st.session_state["v1_spec_dirty"] = False
 
   if st.session_state.get("v1_selection_dirty", False):
-    render_v1_header()
+    render_v1_header(stacked_banner)
     if not current_selected_non_empty:
       st.info(
           "👈 当前未选择任何项目。请在左侧**「待生成项目 / 参数组」**中选择项目，然后点击 **「🚀 生成 / 更新所选项目图表」**。"
@@ -792,7 +857,7 @@ def run_v1_app():
   ]
 
   if not confirmed_projects:
-    render_v1_header()
+    render_v1_header(stacked_banner)
     st.info(
         "👈 请在左侧**「待生成项目 / 参数组」**中选择至少一个项目，然后点击 **「🚀 生成 / 更新所选项目图表」**。"
     )
@@ -1244,7 +1309,7 @@ def run_v1_app():
     st.stop()
 
   ready_projects = list(project_bundles.keys())
-  render_v1_header()
+  render_v1_header(stacked_banner)
 
   def default_titles_for_project(p_name):
     return (
@@ -1794,7 +1859,6 @@ def run_v1_app():
       ymax_val=None,
       point_size=None,
   ):
-    """多通道散点序列图：仅绘制各通道散点（不连折线），适合大样本下清晰观察"""
     fig, ax = plt.subplots(figsize=(w_in, h_in), dpi=170)
     df_c = b["df_clean"]
     p_cols = b["cols"]
@@ -2661,7 +2725,6 @@ def run_v2_app():
     )
     st.stop()
 
-  # 2. 共用 SPEC 规格设定
   st.sidebar.header("2️⃣ 共用 SPEC 规格设定")
   st.sidebar.caption("多批次共用同一规格；修改时不实时刷新图表，点上方按钮统一生效")
 
@@ -2766,7 +2829,6 @@ def run_v2_app():
             args=(pk, "usl", bu_k),
         )
 
-  # 3. 全局统一样本屏蔽 + 自定义样本区间
   st.sidebar.header("3️⃣ 全局样本屏蔽与区间")
   active_ref_lsl = float(specs_map[focus_key]["lsl"])
   active_ref_usl = float(specs_map[focus_key]["usl"])
@@ -2916,7 +2978,6 @@ def run_v2_app():
       st.sidebar.error("⚠️ 起始序号不能大于结束序号！")
       st.stop()
 
-  # 4. 西格玛 / CPK 波动校准
   st.sidebar.markdown("---")
   with st.sidebar.expander("⚙️ 西格玛 / CPK 波动校准", expanded=False):
     sigma_target_proj = st.selectbox(
@@ -3281,7 +3342,6 @@ def run_v2_app():
       show_normal_fit=True,
       show_spec_lines=True,
   ):
-    """Minitab 风格多批次叠加含组直方图，支持可选正态拟合线"""
     active_labels = [lbl for lbl in batch_labels_all if lbl in p_batch_dict]
     first_b = p_batch_dict[active_labels[0]]
     p_lsl, p_target, p_usl = first_b["lsl"], first_b["target"], first_b["usl"]
